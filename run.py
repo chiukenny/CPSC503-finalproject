@@ -21,8 +21,8 @@ import csv
 '''-----------Data--------------'''
 
 # Change to select corpus
-# corpus = "20news"
-corpus = "nytimes"
+corpus = "20news"
+# corpus = "nytimes"
 
 def onehot(data, min_length):
     return np.bincount(data, minlength=min_length)

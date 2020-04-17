@@ -54,7 +54,7 @@ class VAE(object):
                                       self.network_weights["biases_recog"])
 
         n_z = self.network_architecture["n_z"]
-        eps = tf.random_normal((1, n_z), 0, 1,
+        eps = tf.random_normal((self.batch_size, n_z), 0, 1,
                                dtype=tf.float32)
         self.z = tf.add(self.z_mean,
                         tf.multiply(tf.sqrt(tf.exp(self.z_log_sigma_sq)), eps))
@@ -125,7 +125,12 @@ class VAE(object):
                                         feed_dict={self.x: np.expand_dims(X, axis=0),self.keep_prob: 1.0})
         return cost
     def topic_prop(self, X):
-        """heta_ is the topic proportion vector. Apply softmax transformation to it before use.
+        """ theta_ is the topic proportion vector. Apply softmax transformation to it before use.
         """
-        theta_ = self.sess.run((self.z),feed_dict={self.x: np.expand_dims(X, axis=0),self.keep_prob: 1.0})
+        theta_ = self.sess.run((self.z_mean),feed_dict={self.x: np.expand_dims(X, axis=0),self.keep_prob: 1.0})
         return theta_
+    def topic_prop_samples(self, X):
+        """ samples_ is the topic proportion samples for the given document. Apply softmax transformation to it before use.
+        """
+        samples_ = self.sess.run((self.z),feed_dict={self.x: np.expand_dims(X, axis=0),self.keep_prob: 1.0})
+        return samples_
