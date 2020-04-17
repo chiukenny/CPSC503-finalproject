@@ -15,6 +15,8 @@ from models import prodlda, nvlda
 from scipy.special import comb
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.stats import entropy
+import random
+import math
 import csv
 '''-----------Data--------------'''
 
@@ -90,7 +92,7 @@ def make_network(layer1=100,layer2=100,num_topics=50,bs=200,eta=0.002):
 
 
 '''--------------Methods--------------'''
-def create_minibatch(data):
+def create_minibatch(data, batch_size=200):
     rng = np.random.RandomState(10)
 
     while True:
@@ -113,8 +115,11 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
                                      batch_size=batch_size)
     emb=0
     
+    num_topics = network_architecture['n_z']
+    # Intermediate topic-document distributions
+    theta = np.zeros((n_samples_tr, num_topics, training_epochs))
     # Intermediate word-topic distributions
-    phi = np.zeros((network_architecture['n_z'], vocab_size, training_epochs))
+    phi = np.zeros((num_topics, vocab_size, training_epochs))
     
     # Training cycle
     for epoch in range(training_epochs):
@@ -134,13 +139,16 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
                 # return vae,emb
                 sys.exit()
                 
+        for i, doc in enumerate(docs_tr):
+            theta[i,:,epoch] = vae.topic_prop(doc)
+        theta[:,:,epoch] = tf.nn.softmax(theta[:,:,epoch],1).eval()
         phi[:,:,epoch] = tf.nn.softmax(emb,1).eval()
 
         # Display logs per epoch step
         if epoch % display_step == 0:
             print("Epoch:", '%04d' % (epoch+1), \
                   "cost=", "{:.9f}".format(avg_cost))
-    return vae,emb,phi
+    return vae,emb,theta,phi
 
 def print_top_words(beta, feature_names, n_top_words=10):
     print('---------------Printing the Topics------------------')
@@ -154,30 +162,18 @@ def calcPerp(model):
     for doc in docs_te:
         doc = doc.astype('float32')
         n_d = np.sum(doc)
+        if n_d == 0:
+            continue
         c=model.test(doc)
         cost.append(c/n_d)
     print('The approximated perplexity is: ',(np.exp(np.mean(np.array(cost)))))
-    
-# TODO DELETE AFTER
-def temp(model, beta):
-    print("emb:", beta.shape)
-    with tf.Session() as sess:
-        print("emb sum:",np.sum(tf.nn.softmax(beta, axis=1).eval(), 1))
-    # print("probs:", np.sum(np.exp(beta),1))
-    batches = 0
-    for doc in docs_tr:
-        batches += 1
-        # doc = doc.astype('float32')
-        # print("topic prop:", model.topic_prop(doc))
-        print("topic prop:", tf.nn.softmax(model.topic_prop(doc)))
-        print("topic prop shape:", tf.nn.softmax(model.topic_prop(doc)).shape)
-        if batches == 2:
-            break
    
 # Semantic coherence   
 # https://mimno.infosci.cornell.edu/papers/mimno-semantic-emnlp.pdf
 # Epsilion instead of +1: https://www.aclweb.org/anthology/D12-1087.pdf
 def calcCoherence(beta, n_top_words=10):
+    print("Calculating coherence")
+    
     num_topics = len(beta)
     coherence = np.zeros(num_topics)
     coherence_eps = np.zeros(num_topics)
@@ -187,7 +183,7 @@ def calcCoherence(beta, n_top_words=10):
         for i, word1 in enumerate(words[1:]):
             for j, word2 in enumerate(words[0:i-1]):
                 coherence[k] += np.log(data_tr_cofreq[word1,word2]+1) - np.log(data_tr_doc_freq[word2])
-                coherence_eps[k] += np.log(data_tr_cofreq[word1,word2]+10**-12) - np.log(data_tr_doc_freq[word2])
+                coherence_eps[k] += np.log(data_tr_cofreq[word1,word2]+1e-12) - np.log(data_tr_doc_freq[word2])
     # print("Coherence:", coherence)
     return coherence, coherence_eps
     
@@ -195,6 +191,7 @@ def calcCoherence(beta, n_top_words=10):
 # https://mimno.infosci.cornell.edu/info6150/readings/N10-1012.pdf
 # Epsilion: https://www.aclweb.org/anthology/D12-1087.pdf
 def calcPMI(beta, n_top_words=10):
+    print("Calculating PMI")
     data_tr_prob = np.sum(data_tr, 0) / np.sum(data_tr)
     data_tr_joint_prob = data_tr_cofreq / np.sum(data_tr_cofreq)
     num_topics = len(beta)
@@ -204,13 +201,15 @@ def calcPMI(beta, n_top_words=10):
         words = beta[k].argsort()[:-n_top_words - 1:-1]
         for i, word1 in enumerate(words[:-1]):
             for word2 in words[i+1:]:
-                pmi[k] += np.log(data_tr_joint_prob[word1,word2]+10**-12) - np.log(data_tr_prob[word1]) - np.log(data_tr_prob[word2])
+                pmi[k] += np.log(data_tr_joint_prob[word1,word2]+1e-12) - np.log(data_tr_prob[word1]) - np.log(data_tr_prob[word2])
     # print("PMI:", pmi)
     return pmi
     
 # Normalized pointwise mutual information
 # https://www.aclweb.org/anthology/E14-1056.pdf
 def calcNPMI(beta, n_top_words=10):
+    print("Calculating NPMI")
+    
     data_tr_prob = np.sum(data_tr, 0) / np.sum(data_tr)
     data_tr_joint_prob = data_tr_cofreq / np.sum(data_tr_cofreq)
     num_topics = len(beta)
@@ -230,6 +229,8 @@ def calcNPMI(beta, n_top_words=10):
 # Topic stability for optimization
 # http://deanxing.net/assets/pdf/aaai18.pdf
 def calcStability(phi):
+    print("Calculating stability")
+    
     # Mean of word-topic distribution over epochs
     means = np.mean(phi,2)
     num_topics = phi.shape[0]
@@ -251,6 +252,8 @@ def calcStability(phi):
     return cosine_stability, symkl_stability, euclid_stability
     
 def calcJaccardStability(phi, n_top_words=10):
+    print("Calculating Jaccard stability")
+    
     # Mean of word-topic distribution over epochs
     means = np.mean(phi,2)
     num_topics = phi.shape[0]
@@ -272,6 +275,32 @@ def calcJaccardStability(phi, n_top_words=10):
     # print("Topic Jaccard stability:", jaccard_stability)
     return jaccard_stability
     
+def calcVariability(theta):
+    print("Calculating variability")
+    
+    means = np.mean(theta,2)
+    sds = np.std(theta,2)
+    cvs = sds / means
+    variability = np.std(cvs,0)
+    # print("Topic variability:", variability)
+    return variability
+    
+def calcPosteriorVariability(model, num_samples=1000):
+    print("Calculating posterior variability")
+    random.seed(503)
+    docs_tr_samples = random.sample(range(n_samples_tr), num_samples)
+    pcvs = np.zeros((num_samples, network_architecture['n_z']))
+    for i in range(num_samples):
+        if i % 100 == 0:
+            print("Documents processed:", i)
+        doc = docs_tr[docs_tr_samples[i]]
+        samples = tf.nn.softmax(model.topic_prop_samples(doc),1).eval()
+        pcvs[i,:] = np.std(samples,0) / np.mean(samples,0)
+    print("Total documents processed:", num_samples)
+    pvariability = np.std(pcvs,0)
+    # print("Topic posterior variability over", num_samples, "samples:", pvariability)
+    return pvariability
+    
 def printDocument(doc, feature_names):
     print(" ".join([feature_names[i] for i in doc]))
 
@@ -283,7 +312,6 @@ def main(argv):
     b = ''
     r = ''
     e = ''
-    d = ''
     try:
       opts, args = getopt.getopt(argv,"hpnm:f:s:t:b:r:,e:",["default=","model=","layer1=","layer2=","num_topics=","batch_size=","learning_rate=","training_epochs"])
     except getopt.GetoptError:
@@ -328,12 +356,11 @@ def main(argv):
         elif opt == "-e":
             e=int(arg)
 
-    minibatches = create_minibatch(docs_tr.astype('float32'))
+    minibatches = create_minibatch(docs_tr.astype('float32'), b)
     network_architecture,batch_size,learning_rate=make_network(f,s,t,b,r)
     print(network_architecture)
     print(opts)
-    vae,emb,phi = train(network_architecture, minibatches,m, training_epochs=e,batch_size=batch_size,learning_rate=learning_rate)
-    # temp(vae, emb) # TODO DELETE AFTER
+    vae,emb,theta,phi = train(network_architecture, minibatches,m, training_epochs=e,batch_size=batch_size,learning_rate=learning_rate)
     feature_names = next(zip(*sorted(vocab.items(), key=lambda x: x[1])))
     print_top_words(emb, feature_names)
     calcPerp(vae)
@@ -342,13 +369,15 @@ def main(argv):
     npmi = calcNPMI(emb)
     cos, kl, euc = calcStability(phi)
     jac = calcJaccardStability(phi)
-    # printDocument(data_tr_raw[0], next(zip(*sorted(vocab.items(), key=lambda x: x[1]))))
+    vari = calcVariability(theta)
+    pvari = calcPosteriorVariability(vae, math.floor(n_samples_tr*0.1))
     n_top_words = 10
-    with open(corpus + '_topics.csv', 'w', newline='') as csvf:
+    print("Writing results to CSV")
+    with open('results/' + corpus + '_topics_' + m + '.csv', 'w', newline='') as csvf:
         csvw = csv.writer(csvf)
-        csvw.writerow(["ID", "Topic", "Coherence", "Coherence+eps", "PMI", "NPMI", "Cosine", "KL", "Euclidean", "Jaccard"])
+        csvw.writerow(["ID", "Topic", "Coherence", "Coherence+eps", "PMI", "NPMI", "Cosine", "KL", "Euclidean", "Jaccard", "Variability", "Post Variability"])
         for k in range(network_architecture['n_z']):
-            csvw.writerow([k+1, " ".join([feature_names[i] for i in emb[k].argsort()[:-n_top_words - 1:-1]]), coh[k], cohep[k], pmi[k], npmi[k], cos[k], kl[k], euc[k], jac[k]])
+            csvw.writerow([k+1, " ".join([feature_names[i] for i in emb[k].argsort()[:-n_top_words - 1:-1]]), coh[k], cohep[k], pmi[k], npmi[k], cos[k], kl[k], euc[k], jac[k], vari[k], pvari[k]])
 
 if __name__ == "__main__":
    main(sys.argv[1:])

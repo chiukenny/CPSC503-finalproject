@@ -6,8 +6,10 @@ WIP.
 #### ProdLDA and NVLDA
 ---
 
+ProdLDA/NVLDA code in this repository is a modified version of the original TensorFlow implementation by @akashgit.
+
 * Original paper: [Autoencoding Variational Inference for Topic Models](https://arxiv.org/abs/1703.01488)
-* Original TensorFlow implementation by @akashgit: [GitHub](https://github.com/akashgit/autoencoding_vi_for_topic_models)
+* Original TensorFlow implementation: [GitHub](https://github.com/akashgit/autoencoding_vi_for_topic_models)
 
 Requirements:
 
@@ -21,6 +23,8 @@ Run ProdLDA model:
 
 Run NVLDA model:
 > `py run.py -m nvlda -f 100 -s 100 -t 50 -b 200 -r 0.005 -e 300`
+
+To change the target corpus, uncomment the corresponding corpus variable in run.py and comment out the other.
 
 ---
 #### Data sets
