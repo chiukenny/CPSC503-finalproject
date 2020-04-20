@@ -1,0 +1,348 @@
+\documentclass[10pt]{article}
+
+\usepackage{hltnaacl04}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage{makecell}
+\usepackage{graphicx}
+\usepackage{xcolor}
+
+\definecolor{darkblue}{rgb}{0.0, 0.0, 0.55}
+
+\makeatletter
+\newcommand{\@BIBLABEL}{\@emptybiblabel}
+\newcommand{\@emptybiblabel}[1]{}
+\makeatother
+\usepackage[colorlinks=true,citecolor=darkblue,linkcolor=black,urlcolor=darkblue]{hyperref}
+
+\setlength\titlebox{6.5cm}
+
+\title{Evaluating Topic Stability and Variability for Variational Autoencoder Topic Models}
+
+\author{
+Kenny Chiu \\
+Department of Statistics \\
+University of British Columbia \\
+Vancouver, BC, Canada, V6T 1Z4 \\
+{\tt kenny.chiu@stat.ubc.ca}
+}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Many co-occurrence based metrics have been proposed for evaluating probabilistic topic models. Recently, metrics that instead use the variability of the model posterior distribution have been shown to be more correlated with human judgment than the co-occurrence based metrics. However, these metrics rely on the availability of Gibbs samples and hence do not directly apply to neural topic models. We propose several translations of these posterior based metrics to the neural setting and evaluate them against existing baseline metrics. The results of our experiment involving two variational autoencoder topic models and two datasets suggest that intermediate estimates obtained after training epochs do not substitute for Gibbs samples, but random samples drawn from the posterior distribution after the network has been trained may have potential.
+\end{abstract}
+
+\section{Introduction}
+
+The outputs of probabilistic topic models such as latent Dirichlet allocation (LDA)~\cite{Blei:2003} have found applications in further downstream natural language processing tasks. Thus, evaluating the quality of a topic model is necessary for determining whether the model produces reasonable or noisy results. As manual human evaluation of topics is inefficient and expensive, many numerical metrics have been proposed for evaluating the quality of topics with the aim of mimicking human intuition and judgment. Most of these metrics are \textit{co-occurrence based} and use statistics computed from co-occurrences between pairs of words. Recently, \textit{posterior based metrics}~\cite{Xing:2018,Xing:2019} have been proposed for LDA topic models and were found to be more correlated with human judgment than the co-occurrence based metrics. These posterior based metrics measure the variability of the posterior topic and word distributions, where a smaller variability indicates a better quality. Variability is estimated using posterior samples obtained from the Gibbs sampling procedure which is commonly used for inference in LDA topic models~\cite{Steyvers:2007}.
+
+While posterior based metrics appear promising for topic model evaluation, not all probabilistic topic models use Gibbs sampling for inference. In particular, the rise of neural networks in recent years have led to new neural approaches to topic modeling. Variational autoencoder (VAE) topic models~\cite{Miao:2015,Srivastava:2017} are one of these new approaches that have the advantage of being fast and reusable for new documents once trained. VAE topic models are typically trained through stochastic gradient optimization, and so the posterior based metrics computed from Gibbs samples do not directly apply to these models.
+
+Our objective for this project is therefore to explore possible translations of the posterior based metrics to the neural setting. While the new metrics we consider in this project do not appear to outperform existing metrics in term of correlation with human judgment, they provide some insight that may guide future development of new metrics for evaluating the quality of VAE topic models.
+
+\subsection{Contribution}
+
+The main contributions of our work are the following:
+\begin{enumerate}
+
+\item
+Evaluations of several new metrics against existing metrics using two different VAE topic models trained on two different datasets.
+
+\item
+Insights gained from the results of an experiment for guiding future work.
+
+\item
+Publicly available Python 3 implementations for the NVLDA and ProdLDA topic models that are adapted from the original Python 2 implementations. A link to the GitHub repository is provided in Appendix~\ref{sec:code}.
+
+\end{enumerate}
+
+\section{VAE Topic Models}
+
+VAE topic models come in various flavours but ultimately have the same approach to topic modeling. VAEs~\cite{Kingma:2013} consist of an \textit{inference network} (i.e., encoder) that maps observed data to some latent space and a \textit{generative network} (i.e., decoder) that reconstructs the observations from values of the latent space. In the context of topic modeling, the observations are the documents (typically in bag-of-words representation) and the latent space describes the topic and word distributions. The inference network is the main advantage that VAE topic models have over other topic models as once the network has trained, the network can be reused on new documents to infer their topic distributions without needing additional training. Some VAE topic models still operate in the LDA setting, where the network approximates a LDA topic model and the latent space is the space of Dirichlet document-topic and topic-word probability distributions~\cite{Srivastava:2017}. Other VAE topic models forgo LDA all together and model the topics through other representations, such as through a Gaussian topic distribution as in the Neural Variational Document Model \cite{Miao:2015}. In this project, we consider two closely related VAE-LDA topic models.
+
+\subsection{NVLDA}
+
+The Dirichlet document-topic and topic-word distributions are challenging to deal with in VAEs due to the distributions living on a simplex and requiring constrained optimization. The NVLDA topic model~\cite{Srivastava:2017} avoids this issue by using a Laplace approximation to the Dirichlet priors where distribution estimates are projected onto a simplex by doing a softmax operation. The posterior over the simplex basis is then approximated using a logistic normal distribution with mean and covariance parameters.
+
+The inference network in NVLDA consists of two fully connected-softplus layers that feed into two separate layers that output the estimated mean and covariance parameters of the logistic normal. The generative network is a simple stochastic layer that reconstructs documents based on samples drawn from the approximated logistic normal distribution. The networks are trained using the variational evidence lower bound objective as is standard in VAEs.
+
+\subsection{ProdLDA}
+
+The ProdLDA topic model~\cite{Srivastava:2017} is identical to the NVLDA model in concept and in architecture except that the unconstrained estimates rather than the softmaxed estimates are used implicitly. This is described as LDA in an unconstrained space and allows new documents to be mapped to distributions outside the simplex spanned by the topic distributions of the posterior. Produced distribution estimates are still fed through a softmax operation when a distribution is needed for interpretation or for metric calculations.
+
+\section{Co-occurrence Based Metrics}
+
+We consider several existing co-occurrence based metrics to use as baselines in the evaluation of our proposed metrics.
+
+\subsection{Coherence and Generalized Coherence}
+
+Let $D(w)$ be the document frequency of word $w$ (number of documents that $w$ appears in) and $D(w,w')$ be the co-document frequency of words $w$ and $w'$ (number of documents that both $w$ and $w'$ appear in). Let $W^{(t)}=\left(w_1^{(t)},...,w_M^{(t)}\right)$ be the list of $M$ most probable words in topic $t$ (we use $M=10$ for all the relevant metrics considered in this project). Then the \textit{topic coherence}~\cite{Mimno:2011} is defined as
+\[
+C\left(t;W^{(t)}\right)=\sum_{i=2}^M\sum_{j=1}^{i-1}\log\frac{D\left(w_i^{(t)},w_j^{(t)}\right)+1}{D\left(w_j^{(t)}\right)}
+\]
+
+We also consider the generalized topic coherence metric that was found to improve coherence scores in certain cases~\cite{Stevens:2012}. The metric (which we refer to as \textit{topic coherence$_\epsilon$}) allows different smoothing factors and is defined as
+\[
+C\left(t,\epsilon;W^{(t)}\right)=\sum_{i=2}^M\sum_{j=1}^{i-1}\log\frac{D\left(w_i^{(t)},w_j^{(t)}\right)+\epsilon}{D\left(w_j^{(t)}\right)}
+\]
+where we use $\epsilon=10^{-12}$ following the original authors.
+
+\subsection{Pointwise Mutual Information (PMI)}
+
+Let $P(w)$ be the marginal probability of word $w$ and $P(w,w')$ be the joint probability of words $w$ and $w'$. Then \textit{topic PMI}~\cite{Lau:2014} is defined as
+\[
+\textrm{PMI}\left(t,\epsilon;W^{(t)}\right) = \sum_{i=1}^{M-1}\sum_{j=i+1}^M\log\frac{P\left(w_i^{(t)},w_j^{(t)}\right)+\epsilon}{P\left(w_i^{(t)}\right)P\left(w_j^{(t)}\right)}
+\]
+where a smoothing factor $\epsilon$ is again added to avoid taking the log of 0 in the case that $w_i^{(t)}$ and $w_j^{(t)}$ do not appear in the same documents.
+
+\subsection{Normalized PMI (NPMI)}
+
+NPMI is closely related to PMI except that it is normalized to be on the interval $[-1,1]$. In this project, we scale this interval to $[0,1]$ for ease of interpretation. \textit{Topic NPMI}~\cite{Lau:2014} is then defined as
+\[
+\textrm{NPMI}\left(t;W^{(t)}\right) = \sum_{i=1}^{M-1}\sum_{j=i+1}^M\frac{\log\frac{P\left(w_i^{(t)},w_j^{(t)}\right)}{P\left(w_i^{(t)}\right)P\left(w_j^{(t)}\right)}}{-\log P\left(w_i^{(t)},w_j^{(t)}\right)}
+\]
+where NPMI is taken to be -1 (or 0 after scaling) if a pair of words do not co-occur. Because the metric is bounded, a smoothing factor is unneeded here.
+
+\section{Posterior Based Metrics}\label{sec:posterior}
+
+We introduce the two posterior based metrics that our proposed metrics for VAE topic models are based off of.
+
+\subsection{Stability}
+
+For topic $t$, let $\phi^{(t)}$ be its topic-word distribution. Let $\Phi^{(t)}=\left(\phi_1^{(t)},...,\phi_K^{(t)}\right)$ be the sample of $K$ Gibbs estimates of the distribution. Denote the mean of the sample as $\textrm{mean}\left(\Phi^{(t)}\right)$. Then \textit{topic stability}~\cite{Xing:2018} is defined as
+\[
+S\left(t;\Phi^{(t)}\right) = \frac{1}{K}\sum_{i=1}^K\textrm{sim}\left(\phi_i^{(t)},\textrm{mean}\left(\Phi^{(t)}\right)\right)
+\]
+where $\textrm{sim}(\cdot)$ is some vector (dis)similarity function.
+
+\subsection{Variability}
+
+For a document $d$, let $\theta^{(d)}$ be its document-topic distribution. Let $\Theta^{(d)}=\left(\theta_1^{(d)},...,\theta_K^{(d)}\right)$ be the sample of $K$ Gibbs estimates of the distribution. For a topic $t$, denote the sample of $K$ probability estimates as $\Theta_t^{(d)}$. Let $\textrm{std}(\cdot)$ be the standard deviation function. The \textit{coefficient of variance} for topic $t$ and document $d$ is defined as
+\[
+\textrm{cv}_{d}^{(t)} = \frac{\textrm{std}\left(\Theta_t^{(d)}\right)}{\textrm{mean}\left(\Theta_t^{(d)}\right)}
+\]
+Let $\Sigma^{(t)}=\left(\textrm{cv}_1^{(t)},...,\textrm{cv}_D^{(t)}\right)$ be the set of coefficient of variance for topic $t$ across $D$ documents. Then \textit{topic variability}~\cite{Xing:2019} is defined as
+\[
+V\left(t;\Sigma^{(t)}\right) = \textrm{std}\left(\Sigma^{(t)}\right)
+\]
+
+\section{Proposed Metrics for VAE Topic Models}
+
+We propose several new metrics inspired by the posterior based metrics described in Section~\ref{sec:posterior}. Note that in this project, we scale the metrics such that they take on values in $[0,1]$ if the original interval is bounded.
+
+\subsection{VAE-Stability and VAE-Variability}
+
+The VAE translations of topic stability (\textit{VAE-Stability}) and variability (\textit{VAE-Variability}) are identical to the original formulations except that rather than $\Phi^{(t)}$ and $\Theta^{(d)}$ being the sample of Gibbs estimates, we use the intermediate estimates of the logistic normal mean obtained after each epoch during the training phase of the network. The initial idea comes from treating the epoch estimates as random samples drawn from a distribution induced by the stochastic gradient optimization. This is partially inspired by stochastic gradient Langevin dynamics~\cite{Welling:2011} where by injecting random noise into the stochastic gradient iterations and applying a diminishing learning rate, the training procedure automatically transitions from performing optimization to drawing samples from the posterior. However, due to the scope of this project, we do not inject random noise during training and only use the epoch estimates as is.
+
+For the vector (dis)similarity function $\textrm{sim}(\cdot)$ in VAE-Stability, we consider cosine similarity, symmetric KL divergence, and Euclidean distance. We also consider Jaccard similarity, which we define as
+\[
+J(\phi,\phi') = \frac{1}{M^2}\sum_{i=1}^M\sum_{j=1}^{M}\frac{D(w_i,w_j')}{D(w_i)+D(w_j')-D(w_i,w_j')}
+\]
+where $w$ and $w'$ correspond to the $M$ most probable words in word distributions $\phi$ and $\phi'$ respectively. Note that our definition makes VAE-Stability with Jaccard similarity both a co-occurrence and posterior based metric.
+
+\subsection{VAE-Posterior Variability}
+
+Another VAE translation of topic variability we propose, \textit{VAE-Posterior Variability}, considers the variability of the posterior itself. The variability is estimated using a random sample $\Theta^{(d)}$ of $K$ document-topic estimates generated for each training document after the network has been trained. The random samples are obtained as a natural output of the VAE due to the \textit{reparameterization trick}~\cite{Kingma:2013} that outsources the randomness in the inputs to an implicit distribution within the network. The network generates random samples from this implicit distribution and transforms them into samples of the target latent distribution given a document. The same computation for variability is then applied over the samples $\Theta^{(d)}$ of each document.
+
+Note that this metric is computationally time-intensive even with a GPU. Given the timeframe of the project, we only use a randomly sampled 10\% of the training set rather than the entire training set to calculate the metric.
+
+\section{Evaluation}
+
+
+\begin{table*}[t]
+\centering
+\begin{tabular}{l|ccccc|ccccc}
+\Xhline{4\arrayrulewidth}
+& \multicolumn{5}{c|}{Pearson's $r$} & \multicolumn{5}{c}{Spearman's $\rho$} \\
+& \multicolumn{2}{c}{NVLDA} & \multicolumn{2}{c}{ProdLDA} & & \multicolumn{2}{c}{NVLDA} & \multicolumn{2}{c}{ProdLDA} & \\
+\textbf{Metric} & 20NG & NYT & 20NG & NYT & \textbf{Mean} & 20NG & NYT & 20NG & NYT & \textbf{Mean} \\
+\hline
+Coherence & 0.274 & 0.006 & 0.128 & 0.157 & 0.141 & 0.262 & 0.048 & 0.252 & 0.128 & 0.173 \\
+Coherence$_\epsilon$ & 0.151 &-0.003 & 0.334 & 0.369 & 0.213 & 0.272 & 0.029 & 0.264 & 0.118 & 0.171 \\
+PMI & 0.276 & 0.397 & 0.330 & 0.404 & 0.352 & 0.237 & 0.387 & 0.182 & \textbf{0.376} & 0.296 \\
+NPMI & 0.260 & \textbf{0.400} & \textbf{0.352} & \textbf{0.413} & \textbf{0.356} & 0.249 & \textbf{0.390} & 0.184 & 0.374 & \textbf{0.299} \\
+\hline
+Cosine Stability & 0.358 & -0.085 & -0.062 & -0.082 & 0.032 & 0.419 & -0.070 & -0.048 & -0.037 & 0.066 \\
+KL Stability & \textbf{-0.380} & 0.087 & 0.034 & 0.069 & -0.048 & -0.416 & 0.079 & 0.008 & 0.023 & -0.077 \\
+Euclid. Stability & -0.350 & 0.080 & 0.092 & 0.079 & -0.025 & \textbf{-0.433} & 0.063 & 0.061 & 0.045 & -0.066 \\
+Jaccard Stability & 0.065 & -0.310 & 0.205 & -0.116 & -0.039 & 0.081 & -0.211 & \textbf{0.271} & -0.005 & 0.034 \\
+Variability & -0.093 & -0.216 & 0.097 & 0.059 & -0.038 & -0.089 & -0.228 & 0.070 & 0.066 & -0.045 \\
+Post. Variability & -0.190 & -0.085 & -0.237 & -0.237 & -0.187 & -0.196 & -0.043 & -0.195 & -0.299 & -0.183 \\
+\Xhline{4\arrayrulewidth}
+\end{tabular}
+\caption{Measures of correlation between human judgment and the metrics.}
+\label{tab:correlation}
+\end{table*}
+
+We evaluate our proposed metrics against the existing metrics in terms of correlation with human judgment.
+
+\subsection{NVLDA and ProdLDA Implementation}
+
+We use modified versions of the original TensorFlow implementations of NVLDA and ProdLDA in our experiment. The original code was written in Python 2 and older package versions, while our version works with Python 3 and newer package versions. Our version also adds code for computing the metrics discussed in this report. The GitHub repository containing our implementation is linked in Appendix \ref{sec:code}.
+
+We keep the default settings of the networks. For NVLDA, the number of epochs is 300 and the learning rate is 0.005. For ProdLDA, the number of epochs is 200 and the learning rate is 0.002. For both NVLDA and ProdLDA, the number of topics is fixed to 50 and the hidden dimension of the fully connected layers are set to 100. For computing VAE-Posterior Variability, 200 samples are generated for each sampled training document.
+
+\subsection{Datasets}
+
+The two datasets that we use in our experiment are the \textit{20 Newsgroups} (20NG) dataset and the \textit{New York Times articles} (NYT) dataset.
+
+The 20NG dataset was included with the original NVLDA and ProdLDA implementations and is already preprocessed. The preprocessing involved tokenization, removal of some non UTF-8 characters, and English stop word removal~\cite{Srivastava:2017}. The training set includes 11,258 newsgroup posts from 20 different newsgroups and has a vocabulary size of 1,995. 
+
+The NYT dataset was obtained from Kaggle (link provided in Appendix~\ref{sec:datasource}), and the training set includes 7,112 New York Times articles. We apply the same preprocessing that was done to the 20NG dataset and also remove words with a document frequency of less than 1\% of the dataset. The vocabulary size is 5,212.
+
+\subsection{Experimental Design}
+
+Our experimental design is similar to the one by Xing et al.~\shortcite{Xing:2019}. We train the two VAE topic models on the two datasets and calculate the discussed metrics for each of the returned topics. We also manually annotate each topic with a (human) score on a 4-point scale based on the 10 most probable of words of the topic where 1 indicates poor quality and 4 indicates good quality. Indicators of poor quality include the presence of words that do not appear related to the others and the presence of what appears to be multiple topics.
+
+To measure the strength of correlation between the computed metrics and the human judgment, we use the Pearson correlation coefficient that measures linear association and the Spearman's rank correlation coefficient that measures monotonic association. Both correlation measures take on values between $[-1,1]$ where $0$ indicates no association and $\pm1$ indicates perfect association.
+
+\subsection{Results}\label{sec:results}
+
+The correlation results are shown in Table \ref{tab:correlation}. NPMI and PMI appear to be metrics that are most correlated with human judgment out of all the considered metrics under both the Pearson correlation coefficient and Spearman's rank correlation coefficient. Our proposed metrics that use the epoch estimates are noisy, which suggests that the variability of the epoch estimates does not capture any signals that are meaningful indicators of topic quality. Closer inspection of the epoch metrics shows that the variability across estimates is very small. The mean scores for VAE-Stability with Euclidean distance shown in Table \ref{tab:scores} suggest that the epoch estimates are practically identical up to a few significant digits. Thus, the variability originating from the stochastic optimization appears to be negligible. The learning rate parameter of the network may be a relevant factor here, but our experiment does not investigate the effect of this parameter.
+
+In contrast, the results for VAE-Posterior Variability suggest that there is merit to using the variability of the posterior distribution. This is somewhat expected as VAE-Posterior Variability is conceptually the most similar to the original stability and variability based on Gibbs sampling. However, VAE-Posterior Variability is procedurally very different from the original metrics in that the samples are all obtained only after the model has been trained. Each topic model-dataset run in the experiment was able to train the network and compute the metrics in approximately one hour on a single GPU, but the calculations for VAE-Posterior Variability contributed to approximately half of that time even when using only 10\% of the training documents to calculate the metric. Computation aside, we expect that posterior variability has potential to be an informative topic model metric. Possible improvements include collecting more estimates and calculating the metric differently. A possible solution for avoiding the post hoc calculations may be to use stochastic gradient Langevin dynamics~\cite{Welling:2011} to collect samples directly during training.
+
+We also note the unusually small correlation scores for all metrics in Table \ref{tab:correlation} where for example, NPMI has been shown to achieve a Pearson correlation coefficient of greater than 0.6 with human judgment~\cite{Xing:2019}. This is likely due to the quality of the human scores that were contributed by a single untrained annotator given the short timeframe of the project. A visual example of the correlation between human scores and the NPMI and VAE-Posterior Variability metrics is shown in Figure~\ref{fig:correlation}.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{l|cccc}
+\Xhline{4\arrayrulewidth}
+& \multicolumn{2}{c}{NVLDA} & \multicolumn{2}{c}{ProdLDA} \\
+\textbf{Metric} & 20NG & NYT & 20NG & NYT \\
+\hline
+Human & 2.22 & 2.56 & 2.72 & 2.44 \\
+\hline
+Coherence & -78.63 & -62.97 & -73.95 & -61.48 \\
+Coherence$_\epsilon$ & -88.68 & -65.44 & -117.72 & -84.83 \\
+PMI & 34.28 & 20.95 & 15.70 & 45.64 \\
+NPMI & 0.52 & 0.51 & 0.51 & 0.53 \\
+\hline
+Cosine & 0.97 & 0.99 & 1.00 & 1.00 \\
+KL & 0.03 & 0.01 & 0.00 & 0.00 \\
+Euclidean & 0.01 & 0.00 & 0.00 & 0.00 \\
+Jaccard & 0.10 & 0.19 & 0.11 & 0.17 \\
+Variability & 0.00 & 0.00 & 0.00 & 0.00 \\
+Post. Vari. & 0.11 & 0.08 & 0.11 & 0.07 \\
+\Xhline{3\arrayrulewidth}
+\end{tabular}
+\caption{Mean scores for human judgment and metrics.}
+\label{tab:scores}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=8cm]{../plots/plot_nytimes_topics_prodlda_annotated.csv.png}
+\caption{Human judgment against NPMI and VAE-Posterior Variability for ProdLDA trained on NYT. Pearson's $r$ and Spearman's $\rho$ are shown at the top. Small noise is added to the human scores for visual clarity.}
+\label{fig:correlation}
+\end{figure}
+
+\section{Project Summary}
+
+We reflect on the status of this project. The project was successful in that some results were produced with meaningful insights. While our proposed metrics did not perform well against the existing metrics, they provide valuable information as to what directions may be worth pursuing for developing VAE topic model metrics that are more correlated with human judgment.
+
+Due to the timeframe of the project however, we were unable to assess whether our results generalize across different corpora and different topic models. The two corpora considered in this project were of similar sizes. It would be of interest to know whether our results still hold with larger corpora such as Wikipedia. We also only managed to get two working VAE topic model implementations (both originally by the same author). We were able to get a TensorFlow implementation for the briefly mentioned NVDM running, but the model trained much slower than NVLDA and ProdLDA and we also did not have time to learn the details of the code to properly implement our metric calculations.
+
+Another factor that may affect the validity of our results are the quality of the human scores that we produced. While we tried to be objective by using fixed criteria when evaluating the topics, it was difficult to maintain consistency as ultimately the evaluation was subjective.
+
+\subsection{Learning and Development}
+
+The key concepts learned in this project include the different approaches that neural and non-neural topic models take, as well as the variety of existing metrics used to evaluate topic models. The main challenge encountered in this project was finding runnable implementations of the VAE topic models. Third party PyTorch implementations were first considered but later abandoned due to issues with downgrading and incompatible package versions. The TensorFlow implementations by the original authors are a few years old and are written in Python 2 and older package interfaces. Modifications to the original code eventually allowed the implementations to be run with Python 3 and newer package versions, but the process ultimately involved much trial and error due to the code not being heavily documented.
+
+
+\section{Conclusions and Future Work}\label{sec:conclusion}
+
+In this project, we propose and compare several new metrics against human judgment for evaluating VAE topic models. Our results show that metrics based on intermediate epoch estimates collected during the training phase do not provide meaningful information, while the metric based on variability of the posterior may have potential. Possible improvements to the posterior variability metric may include using a bigger sample in the calculations, modifying how the metric is calculated, and applying stochastic gradient Langevin dynamic techniques to avoid post hoc sample collection. Other directions for future work include repeating our experiment with larger datasets as well as using other VAE topic models. Our experiment may also be further improved by crowdsourcing the human annotation of the topics to obtain higher quality scores contributed from more than one annotator.
+
+\section*{Acknowledgements}
+
+We thank Professor Giuseppe Carenini and Linzi Xing from the University of British Columbia for their ideas and feedback on this project. We also thank Akash Srivastava and Charles Sutton from the University of Edinburgh for making their NVLDA and ProdLDA implementations publicly available.
+
+%\bibliographystyle{acl}
+%\bibliography{sample}
+
+\begin{thebibliography}{}
+
+\bibitem[\protect\citename{Blei et al.}2003]{Blei:2003}
+David~M. Blei, Andrew~Y. Ng, and Michael~I. Jordan.
+\newblock 2003.
+\newblock Latent Dirichlet allocation.
+\newblock {\em Journal of Machine Learning Research}, 3:993–1022.
+
+\bibitem[\protect\citename{Kingma and Welling}2013]{Kingma:2013}
+Diederik~P Kingma and Max Welling.
+\newblock 2013.
+\newblock Auto-encoding variational Bayes.
+\newblock In {\em the 2nd International Conference on Learning Representations}.
+
+\bibitem[\protect\citename{Lau et al.}2014]{Lau:2014}
+Jey Han Lau, David Newman, and Timothy Baldwin.
+\newblock 2014.
+\newblock Machine reading tea leaves: automatically evaluating topic coherence and topic model quality.
+\newblock In {\em Proceedings of the 14th Conference of the European Chapter of the Association for Computational Linguistics}, pages 530–539.
+
+\bibitem[\protect\citename{Miao et al.}2015]{Miao:2015}
+Yishu Miao, Lei Yu, and Phil Blunsom.
+\newblock 2015.
+\newblock Neural variational inference for text processing.
+\newblock In {\em Proceedings of the 33nd International Conference on Machine Learning}, pages 1727–1736.
+
+\bibitem[\protect\citename{Mimno et al.}2011]{Mimno:2011}
+David Mimno, Hanna~M. Wallach, Edmund Talley, Miriam Leenders, and Andrew McCallum.
+\newblock 2011.
+\newblock Optimizing semantic coherence in topic models.
+\newblock In {\em Proceedings of the Conference on Empirical Methods in Natural Language Processing}, pages 262–272.
+
+\bibitem[\protect\citename{Srivastava and Sutton}2017]{Srivastava:2017}
+Akash Srivastava and Charles Sutton.
+\newblock 2017.
+\newblock Autoencoding variational inference for topic models.
+\newblock In {\em the 5th International Conference on Learning Representations}.
+
+\bibitem[\protect\citename{Stevens et al.}2012]{Stevens:2012}
+Keith Stevens, Philip Kegelmeyer, David Andrzejewski, and David Buttler.
+\newblock 2012.
+\newblock Exploring topic coherence over many models and many topics.
+\newblock In {\em Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning}, pages 952–961.
+
+\bibitem[\protect\citename{Steyvers and Griffiths}2007]{Steyvers:2007}
+Mark Steyvers and Tom Griffiths.
+\newblock 2007.
+\newblock Probabilistic topic models.
+\newblock In T. K. Landauer, D. S. McNamara, S. Dennis, and W. Kintsch (Eds.), {\em Handbook of latent semantic analysis}, pages 427–448.
+\newblock Lawrence Erlbaum Associates Publishers.
+
+\bibitem[\protect\citename{Welling and Teh}2011]{Welling:2011}
+Max Welling and Yee Whye Teh.
+\newblock 2011.
+\newblock Bayesian learning via stochastic gradient Langevin dynamics.
+\newblock In {\em Proceedings of the 28th International Conference on International Conference on Machine Learning}, pages 681–688.
+
+\bibitem[\protect\citename{Xing and Paul}2018]{Xing:2018}
+Linzi Xing and Michael~J. Paul.
+\newblock 2018.
+\newblock Diagnosing and improving topic models by analyzing posterior variability.
+\newblock In {\em AAAI Conference on Artificial Intelligence}, pages 6005–6012.
+
+\bibitem[\protect\citename{Xing et al.}2019]{Xing:2019}
+Linzi Xing, Michael~J. Paul, and Giuseppe Carenini.
+\newblock 2019.
+\newblock Diagnosing and improving topic models by analyzing posterior variability.
+\newblock In {\em 2019 Conference on Empirical Methods in Natural Language Processing and 9th International Joint Conference on Natural Language Processing}.
+
+\end{thebibliography}
+
+\appendix
+
+\section*{Appendix}
+
+\section{VAE Topic Model Implementations}\label{sec:code}
+
+Our Python 3 TensorFlow implementations of NVLDA and ProdLDA can be found on our \href{https://github.com/chiukenny/CPSC503-finalproject}{\color{blue}{GitHub}}.
+
+\section{New York Times Dataset Source}\label{sec:datasource}
+
+The NYT dataset was downloaded from \href{https://www.kaggle.com/nzalake52/new-york-times-articles}{\color{blue}{Kaggle}}.
+
+\end{document}

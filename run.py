@@ -188,7 +188,7 @@ def calcCoherence(beta, n_top_words=10):
     return coherence, coherence_eps
     
 # Pointwise mutual information
-# https://mimno.infosci.cornell.edu/info6150/readings/N10-1012.pdf
+# https://www.aclweb.org/anthology/E14-1056.pdf
 # Epsilion: https://www.aclweb.org/anthology/D12-1087.pdf
 def calcPMI(beta, n_top_words=10):
     print("Calculating PMI")
@@ -271,7 +271,7 @@ def calcJaccardStability(phi, n_top_words=10):
                         jaccard_stability[k] += 1
                     else:
                         jaccard_stability[k] += data_tr_cofreq[word1,word2] / (data_tr_doc_freq[word1] + data_tr_doc_freq[word2] - data_tr_cofreq[word1,word2])
-    jaccard_stability /= (training_epochs*comb(n_top_words,2))
+    jaccard_stability /= (training_epochs*n_top_words**2)
     # print("Topic Jaccard stability:", jaccard_stability)
     return jaccard_stability
     
