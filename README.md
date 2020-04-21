@@ -1,10 +1,9 @@
 # Evaluating topic stability and variability for variational autoencoder topic models
 
-This repository contains the source code for Kenny Chiu's CPSC 503 final project at the University of British Columbia. The project report can be found [here](https://github.com/chiukenny/CPSC503-finalproject/blob/master/report/report.pdf).
+This repository contains the source code for Kenny Chiu's [CPSC 503](https://www.cs.ubc.ca/~carenini/TEACHING/CPSC503-20/503-20.html) final project at the University of British Columbia. The project report can be found [here](https://github.com/chiukenny/CPSC503-finalproject/blob/master/report/report.pdf).
 
 ---
 #### NVLDA and ProdLDA
----
 
 Requirements:
 * Python 3.7.6
@@ -20,7 +19,6 @@ Run NVLDA model:
 
 ---
 #### Datasets
----
 
 1. 20 Newsgroups: included with original ProdLDA code. To train on 20NG, run with argument
 > `-c 20ng`
@@ -33,14 +31,12 @@ To train on NYT, run with argument
 
 ---
 #### Computing results
----
 
 Running run.py produces CSVs in \\results by default. Run the following to calculate statistics and create plots:
 > `py compute_results.py -f 20news_topics_prodlda.csv`
 
 ---
-#### Acknowledgements
----
+#### Acknowledgments
 
 The ProdLDA/NVLDA code in this repository is a Python 3 adaptation of the original TensorFlow implementation by [@akashgit](https://github.com/akashgit).
 
