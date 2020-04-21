@@ -1,23 +1,17 @@
 import numpy as np
 import tensorflow as tf
-import itertools,time
-import sys, os
-from collections import OrderedDict
-from copy import deepcopy
-from time import time
-import matplotlib.pyplot as plt
-import pickle
+
 def xavier_init(fan_in, fan_out, constant=1):
     low = -constant*np.sqrt(6.0/(fan_in + fan_out))
     high = constant*np.sqrt(6.0/(fan_in + fan_out))
-    return tf.random_uniform((fan_in, fan_out),
+    return tf.random.uniform((fan_in, fan_out),
                              minval=low, maxval=high,
                              dtype=tf.float32)
 
 def log_dir_init(fan_in, fan_out,topics=50):
-    return tf.log((1.0/topics)*tf.ones([fan_in, fan_out]))
+    return tf.math.log((1.0/topics)*tf.ones([fan_in, fan_out]))
 
-tf.reset_default_graph()
+tf.compat.v1.reset_default_graph()
 class VAE(object):
     """
     See "Auto-Encoding Variational Bayes" by Kingma and Welling for more details.
@@ -29,8 +23,8 @@ class VAE(object):
         self.learning_rate = learning_rate
         self.batch_size = batch_size
         '''----------------Inputs----------------'''
-        self.x = tf.placeholder(tf.float32, [None, network_architecture["n_input"]])
-        self.keep_prob = tf.placeholder(tf.float32)
+        self.x = tf.compat.v1.placeholder(tf.float32, [None, network_architecture["n_input"]])
+        self.keep_prob = tf.compat.v1.placeholder(tf.float32)
 
         '''-------Constructing Laplace Approximation to Dirichlet Prior--------------'''
         self.h_dim = int(network_architecture["n_z"])
@@ -42,8 +36,8 @@ class VAE(object):
         # Create autoencoder network
         self._create_network()
         self._create_loss_optimizer()
-        init = tf.initialize_all_variables()
-        self.sess = tf.InteractiveSession()
+        init = tf.compat.v1.global_variables_initializer()
+        self.sess = tf.compat.v1.InteractiveSession()
         self.sess.run(init)
 
     def _create_network(self):
@@ -54,7 +48,7 @@ class VAE(object):
                                       self.network_weights["biases_recog"])
 
         n_z = self.network_architecture["n_z"]
-        eps = tf.random_normal((self.batch_size, n_z), 0, 1,
+        eps = tf.random.normal((self.batch_size, n_z), 0, 1,
                                dtype=tf.float32)
         self.z = tf.add(self.z_mean,
                         tf.multiply(tf.sqrt(tf.exp(self.z_log_sigma_sq)), eps))
@@ -67,10 +61,10 @@ class VAE(object):
                             n_input, n_z):
         all_weights = dict()
         all_weights['weights_recog'] = {
-            'h1': tf.get_variable('h1',[n_input, n_hidden_recog_1]),
-            'h2': tf.get_variable('h2',[n_hidden_recog_1, n_hidden_recog_2]),
-            'out_mean': tf.get_variable('out_mean',[n_hidden_recog_2, n_z]),
-            'out_log_sigma': tf.get_variable('out_log_sigma',[n_hidden_recog_2, n_z])}
+            'h1': tf.compat.v1.get_variable('h1',[n_input, n_hidden_recog_1]),
+            'h2': tf.compat.v1.get_variable('h2',[n_hidden_recog_1, n_hidden_recog_2]),
+            'out_mean': tf.compat.v1.get_variable('out_mean',[n_hidden_recog_2, n_z]),
+            'out_log_sigma': tf.compat.v1.get_variable('out_log_sigma',[n_hidden_recog_2, n_z])}
         all_weights['biases_recog'] = {
             'b1': tf.Variable(tf.zeros([n_hidden_recog_1], dtype=tf.float32)),
             'b2': tf.Variable(tf.zeros([n_hidden_recog_2], dtype=tf.float32)),
@@ -85,7 +79,7 @@ class VAE(object):
                                            biases['b1']))
         layer_2 = self.transfer_fct(tf.add(tf.matmul(layer_1, weights['h2']),
                                            biases['b2']))
-        layer_do = tf.nn.dropout(layer_2, self.keep_prob)
+        layer_do = tf.nn.dropout(layer_2, rate=1-self.keep_prob)
 
         z_mean = tf.contrib.layers.batch_norm(tf.add(tf.matmul(layer_do, weights['out_mean']),
                         biases['out_mean']))
@@ -96,41 +90,40 @@ class VAE(object):
         return (z_mean, z_log_sigma_sq)
 
     def _generator_network(self,z, weights):
-        self.layer_do_0 = tf.nn.dropout(tf.nn.softmax(z), self.keep_prob)
+        self.layer_do_0 = tf.nn.dropout(tf.nn.softmax(z), rate=1-self.keep_prob)
         x_reconstr_mean = tf.add(tf.matmul(self.layer_do_0, tf.nn.softmax(tf.contrib.layers.batch_norm(weights['h2']))),0.0)
         return x_reconstr_mean
 
     def _create_loss_optimizer(self):
         self.x_reconstr_mean+=1e-10
         reconstr_loss = \
-            -tf.reduce_sum(self.x * tf.log(self.x_reconstr_mean),1)#/tf.reduce_sum(self.x,1)
+            -tf.reduce_sum(self.x * tf.math.log(self.x_reconstr_mean),1)#/tf.reduce_sum(self.x,1)
 
-        latent_loss = 0.5*( tf.reduce_sum(tf.div(self.sigma,self.var2),1)+\
-        tf.reduce_sum( tf.multiply(tf.div((self.mu2 - self.z_mean),self.var2),
+        latent_loss = 0.5 * ( tf.reduce_sum(self.sigma/self.var2,1) + \
+        tf.reduce_sum( tf.multiply((self.mu2 - self.z_mean)/self.var2,
                   (self.mu2 - self.z_mean)),1) - self.h_dim +\
-                           tf.reduce_sum(tf.log(self.var2),1)  - tf.reduce_sum(self.z_log_sigma_sq  ,1) )
+                           tf.reduce_sum(tf.math.log(self.var2),1)  - tf.reduce_sum(self.z_log_sigma_sq  ,1) )
 
         self.cost = tf.reduce_mean(reconstr_loss) + tf.reduce_mean(latent_loss) # average over batch
 
 
         self.optimizer = \
-            tf.train.AdamOptimizer(learning_rate=self.learning_rate,beta1=0.99).minimize(self.cost)
+            tf.compat.v1.train.AdamOptimizer(learning_rate=self.learning_rate,beta1=0.99).minimize(self.cost)
 
     def partial_fit(self, X):
         opt, cost,emb = self.sess.run((self.optimizer, self.cost,self.network_weights['weights_gener']['h2']),feed_dict={self.x: X,self.keep_prob: .75})
         return cost,emb
 
     def test(self, X):
-        cost = self.sess.run((self.cost),
-                                        feed_dict={self.x: np.expand_dims(X, axis=0),self.keep_prob: 1.0})
+        cost = self.sess.run((self.cost), feed_dict={self.x: np.expand_dims(X, axis=0), self.keep_prob: 1.0})
         return cost
     def topic_prop(self, X):
         """ theta_ is the topic proportion vector. Apply softmax transformation to it before use.
         """
-        theta_ = self.sess.run((self.z_mean),feed_dict={self.x: np.expand_dims(X, axis=0),self.keep_prob: 1.0})
+        theta_ = self.sess.run((self.z_mean), feed_dict={self.x: np.expand_dims(X, axis=0), self.keep_prob: 1.0})
         return theta_
     def topic_prop_samples(self, X):
         """ samples_ is the topic proportion samples for the given document. Apply softmax transformation to it before use.
         """
-        samples_ = self.sess.run((self.z),feed_dict={self.x: np.expand_dims(X, axis=0),self.keep_prob: 1.0})
+        samples_ = self.sess.run((self.z), feed_dict={self.x: np.expand_dims(X, axis=0), self.keep_prob: 1.0})
         return samples_

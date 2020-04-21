@@ -1,10 +1,17 @@
-original = "vocab.pkl"
-destination = "vocab_unix.pkl"
+# Script for converting line endings in original vocabulary file to Unix line endings
+# Run with <py 20ng_vocab_to_unix_end.py>
+
+# 20 Newsgroups dataset directory
+ng_dir = "data/20news_clean/"
+
+original = ng_dir + "vocab.pkl"
+destination = ng_dir + "vocab_unix.pkl"
 
 content = ''
-outsize = 0
 with open(original, 'rb') as infile:
     content = infile.read()
+    
+outsize = 0
 with open(destination, 'wb') as output:
     for line in content.splitlines():
         outsize += len(line) + 1
