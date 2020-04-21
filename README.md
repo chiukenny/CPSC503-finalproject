@@ -25,16 +25,17 @@ Run NVLDA model:
 1. 20 Newsgroups: included with original ProdLDA code. To train on 20NG, run with argument
 > `-c 20ng`
 
-2. New York Times: download from [Kaggle](https://www.kaggle.com/nzalake52/new-york-times-articles). Place text file in data/nytimes and run the following script to preprocess it before use.
+2. New York Times: download from [Kaggle](https://www.kaggle.com/nzalake52/new-york-times-articles). Place text file in data/nytimes and run the following script to preprocess it before use:
 > `py nyt_to_numpy.py`
+
 To train on NYT, run with argument
->`-c nyt`
+> `-c nyt`
 
 ---
 #### Computing results
 ---
 
-Running run.py produces CSVs in \\results by default. Run the following to calculate statistics and create plots.
+Running run.py produces CSVs in \\results by default. Run the following to calculate statistics and create plots:
 > `py compute_results.py -f 20news_topics_prodlda.csv`
 
 ---
